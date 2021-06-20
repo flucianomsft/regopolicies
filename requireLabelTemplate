@@ -1,26 +1,29 @@
 apiVersion: templates.gatekeeper.sh/v1beta1
 kind: ConstraintTemplate
 metadata:
-  name: k8sazureblockhostnamespace
+  name: k8srequiredlabels
 spec:
   crd:
     spec:
       names:
-        kind: K8sAzureBlockHostNamespace
+        kind: K8sRequiredLabels
+      validation:
+        # Schema for the `parameters` field
+        openAPIV3Schema:
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
   targets:
     - target: admission.k8s.gatekeeper.sh
       rego: |
-        package k8sazureblockhostnamespace
+        package k8srequiredlabels
 
-        violation[{"msg": msg, "details": {}}] {
-            not input.review.object.spec.nodeSelector["kubernetes.io/os"] == "windows"
-            input_share_hostnamespace(input.review.object)
-            msg := sprintf("Sharing the host namespace is not allowed: %v", [input.review.object.metadata.name])
-        }
-
-        input_share_hostnamespace(o) {
-            o.spec.hostPID
-        }
-        input_share_hostnamespace(o) {
-            o.spec.hostIPC
+        violation[{"msg": msg, "details": {"missing_labels": missing}}] {
+          provided := {label | input.review.object.metadata.labels[label]}
+          required := {label | label := input.parameters.labels[_]}
+          missing := required - provided
+          count(missing) > 0
+          msg := sprintf("you must provide labels: %v", [missing])
         }
